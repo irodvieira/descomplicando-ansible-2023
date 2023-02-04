@@ -1,0 +1,175 @@
+---
+- name: Inativando o swap
+  command: swapoff -a
+
+- name: Removendo o swap do fstab
+  lineinfile:
+    dest: /etc/fstab
+    regexp: swap
+    state: absent
+    
+- name: Criar um arquivo vazio para o modulo do containerd
+  copy:
+    content: ""
+    dest: /etc/modules-load.d/containerd.conf
+    force: no
+    
+- name: Configurar modulo do containerd
+  blockinfile:
+    path: /etc/modules-load.d/containerd.conf
+    block: |
+      overlay
+      br_netfilter    	 
+
+- name: Criar um arquivo vazio para kubernetes sysctl params
+  copy:
+    content: ""
+    dest: /etc/sysctl.d/99-kubernetes-cri.conf
+    force: no
+    
+- name: Configurar sysctl params para o kubernetes
+  lineinfile:
+    path: /etc/sysctl.d/99-kubernetes-cri.conf
+    line: "{{ item }}"
+  with_items:
+    - 'net.bridge.bridge-nf-call-iptables  = 1'
+    - 'net.ipv4.ip_forward                 = 1'
+    - 'net.bridge.bridge-nf-call-ip6tables = 1'
+    
+- name: Executando sysctl
+  command: sysctl --system 
+  
+- name: modprobe and ip forward
+  shell: |
+    modprobe br_netfilter
+    echo '1' > /proc/sys/net/ipv4/ip_forward
+    sysctl -p  
+
+- name: Instalando pre-requisitos para o Kubernetes
+  apt: 
+    name: 
+      - apt-transport-https
+      - ca-certificates
+      - curl
+      - gnupg-agent
+      - software-properties-common
+    state: present
+
+- name: Docker Directory
+  file: 
+    path: /etc/docker
+    state: directory
+    
+- name: daemon.json file
+  file: 
+    path: /etc/docker/daemon.json
+    state: touch    
+
+- name: Docker Json
+  blockinfile:
+    path: /etc/docker/daemon.json
+    block: |
+      {
+        "exec-opts": ["native.cgroupdriver=systemd"],
+        "log-driver": "json-file",
+        "log-opts": {
+          "max-size": "100m"
+        },
+        "storage-driver": "overlay2"
+      }      
+ 
+- name: 
+  lineinfile:
+    path: /etc/docker/daemon.json
+    line: 
+      - "# BEGIN ANSIBLE MANAGED BLOCK"
+      - "# END ANSIBLE MANAGED BLOCK" 
+ 
+- name: Adicionando docker GPG Key
+  apt_key:
+    url: https://download.docker.com/linux/ubuntu/gpg
+    state: present
+
+- name: Adicionando repositorio Docker
+  apt_repository:
+    repo: deb https://download.docker.com/linux/ubuntu jammy stable
+    state: present
+    filename: docker
+    update_cache: yes
+
+- name: Update apt and install docker-ce
+  apt:
+    name: 
+     - docker-ce
+     - docker-ce-cli
+     - containerd.io
+    state: latest
+    update_cache: true  
+
+- name: mv config.toml
+  shell: |
+    mv /etc/containerd/config.toml /etc/containerd/config.toml.bak      
+
+#- name: Instalando containerd
+#  apt: 
+#    name: 
+#      - containerd.io
+#    state: present
+    
+#- name: Configurando containerd
+#  file: 
+#    path: /etc/containerd
+#    state: directory
+    
+#- name: Confiurando o container
+#  shell: /usr/bin/containerd config default > /etc/containerd/config.toml
+
+- name: Criando arquivo de configuracao do containerd
+  copy: 
+    dest: "/etc/crictl.yaml"
+    content: |
+        runtime-endpoint: unix:///run/containerd/containerd.sock
+        image-endpoint: unix:///run/containerd/containerd.sock
+        timeout: 2
+        debug: false
+        
+- name: Habilitando e iniciando servico do containerd
+  systemd: 
+    name: containerd
+    state: restarted
+    enabled: yes
+    daemon-reload: yes
+
+
+- name: Adicionando as chaves da repo apt do k8s
+  apt_key:
+    url: https://packages.cloud.google.com/apt/doc/apt-key.gpg
+    state: present
+
+- name: Adicionando o repo do k8s
+  apt_repository:
+    repo: deb https://apt.kubernetes.io/ kubernetes-xenial main
+    state: present
+
+- name: Instalando os pacotes kubeadm, kubelet e kubectl
+  apt:
+    name: "{{ packages }}"
+  vars:
+    packages:
+    - kubelet
+    - kubeadm
+    - kubectl
+
+- name: Enable service kubelet, and enable persistently
+  service: 
+    name: kubelet
+    enabled: yes
+
+- name: Reboot all the kubernetes nodes.
+  reboot:
+    msg: "Reboot initiated by Ansible"
+    connect_timeout: 5
+    reboot_timeout: 3600
+    pre_reboot_delay: 0
+    post_reboot_delay: 30
+    test_command: whoami    

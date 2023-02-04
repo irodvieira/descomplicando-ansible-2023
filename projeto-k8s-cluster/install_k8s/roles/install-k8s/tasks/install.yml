@@ -1,0 +1,69 @@
+---
+- name: Removendo containerd config.toml
+  file:
+    path: /etc/containerd/config.toml
+    state: absent
+  changed_when: True
+
+- name: Parando Containerd
+  service:
+    name: containerd
+    state: stopped
+  ignore_errors: true  
+
+- name: Parando Kubelet
+  service:
+    name: kubelet
+    state: stopped
+  ignore_errors: true 
+
+- name: Startando Containerd
+  service:
+    name: containerd
+    state: started
+  ignore_errors: true
+
+- name: Startando Kubelet
+  service:
+    name: kubelet
+    state: started
+  ignore_errors: true     
+
+- name: Removendo configuraçãos anteriores do cluster
+  file:
+    path: ~/.kube/config
+    state: absent
+  changed_when: True
+
+- name: Instalando o Docker
+  shell: curl -fsSL https://get.docker.com | bash -
+
+- name: Adicionando as chaves repo k8s no apt
+  apt_key:
+    url: https://packages.cloud.google.com/apt/doc/apt-key.gpg
+    state: present
+
+- name: Adicionando o repo do k8s
+  apt_repository:
+    repo: deb http://apt.kubernetes.io/ kubernetes-xenial main
+    state: present
+
+- name: Install k8s packages
+  apt:
+    name: "{{ packages }}"
+  vars:
+    packages:
+    - kubelet
+    - kubeadm
+    - kubectl
+  notify: Restart Kubelet
+
+- name: Reforçando estado de serviços necessários
+  service:
+    name: containerd
+    state: started  
+
+- name: Pausa por 2 min.
+  pause: 
+    minutes: 2
+        

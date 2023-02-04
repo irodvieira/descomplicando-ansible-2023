@@ -1,0 +1,33 @@
+---
+- hosts: webservers
+  become: yes
+  remote_user: ansible
+  
+  tasks:
+    - name: Instalando o nginx
+      apt: 
+        name: nginx
+        state: latest
+        update_cache: yes
+
+    - name: Habilitando o nginx no boot
+      service: 
+        name: nginx
+        enabled: yes
+
+    - name: Iniciando o nginx
+      service: 
+        name: nginx
+        state: started
+
+    - name: Copiando index.html
+      copy:
+        src: index.html
+        dest: /var/www/html/index.html
+      notify: Restartando o nginx
+
+  handlers:
+  - name: Restartando o nginx
+    service:
+      name: nginx
+      state: restarted

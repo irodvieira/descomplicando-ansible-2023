@@ -1,0 +1,5 @@
+[webservers]
+ansible@linuxtips1
+
+[db]
+ansible@linuxtips2

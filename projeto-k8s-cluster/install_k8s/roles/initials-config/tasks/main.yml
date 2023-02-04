@@ -1,0 +1,3 @@
+---
+# tasks file for initials-config
+- include: initials-config.yml
